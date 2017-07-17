@@ -8,6 +8,8 @@ import numpy as np
 import madmom
 from math import *
 from tqdm import tqdm
+import argparse
+
 #Jeff Mentch 7/14/17
 #script to:
 #1)split recorded Pandora streams into seperate tracks (note: AdBlock+ blocks Ads beforehand)
@@ -25,16 +27,6 @@ from tqdm import tqdm
 
 
 
-min_silence_length=0.5 #minimum length of silence for a split
-window_duration=min_silence_length
-silence_threshold=1e-6 #energy level (between 0.0 and 1.0) below which the signal is regarded as silent.
-step_duration=min_silence_length/10 #amount of time to step through input file after calculating e. Smaller = slower, more accurate; Larger = faster, might miss
-
-
-print "Splitting where energy is below {}% for longer than {}s.".format(
-    silence_threshold * 100.,
-    window_duration
-)
 
 def energy(samples):
     return np.sum(np.power(samples, 2.)) / float(len(samples))
@@ -59,6 +51,39 @@ def windows(signal, window_size, step_size):
             break
         yield signal[i_start:i_end]
 
+
+
+parser = argparse.ArgumentParser(description='Split and process recorded Pandora streams')
+parser.add_argument('indir', type=str, default='/Users/jeff/Documents/increase_prior/recordings/original', help='The input directory (with .wav files), default is /Users/jeff/Documents/increase_prior/recordings/original')
+parser.add_argument('outdir', type=str, default='/Users/jeff/Documents/increase_prior/recordings/split', help='The output dir. Defaults to /Users/jeff/Documents/increase_prior/recordings/split')
+parser.add_argument('min_silence_length',type=float, default=0.5, help='Minimum length of silence for a split. Defaults to 0.5 seconds.')
+parser.add_argument('silence_threshold', type=float, default=1e-6, help='energy level (between 0.0 and 1.0) below which the signal is regarded as silent. Defaults to 1e-6 == 0.0001%.')
+parser.add_argument('step_duration', type=float, default=None, help='amount of time to step through input file after calculating e. Smaller = slower, more accurate; Larger = faster, might miss. Default is min_silence_length/10')
+
+parser.add_argument('--dry-run', action='store_true', help='Don\'t actually write any output files.')
+
+
+args = parser.parse_args()
+window_duration=args.min_silence_length
+if args.step_duration is None:
+	step_duration=args.min_silence_length/10 #
+else:
+    step_duration = args.step_duration
+
+
+print "Splitting where energy is below {}% for longer than {}s.".format(
+    silence_threshold * 100.,
+    window_duration
+)
+
+
+file_list = glob.glob("%s/*.wav")%indir
+if len(file_list) < 1:
+        print "run in a directory with .wav files"
+        sys.exit(1)
+
+
+#load file
 sample_rate, samples = wavfile.read(filename="/Users/jeff/Documents/increase_prior/recordings/original/a_001.wav", mmap=True)
 
 max_amplitude = np.iinfo(samples.dtype).max
