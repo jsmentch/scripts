@@ -61,8 +61,12 @@ parser.add_argument('--silence-threshold', type=float, default=1e-6, help='energ
 parser.add_argument('--step-duration', type=float, default=None, help='amount of time to step through input file after calculating e. Smaller = slower, more accurate; Larger = faster, might miss. Default is min_silence_length/10')
 parser.add_argument('--dry-run', '-d', action='store_true', help='Don\'t actually write any output files.')
 
-args = parser.parse_args()
+parser.add_argument('--downbeat-track', '-t', action='store_true', help='Don\'t run secomd step - RNN downbeat tracking with madmom')
+parser.add_argument('--outdir2', type=str, default='/Users/jeff/Documents/increase_prior/recordings/processed', help='The output dir for part to - downbeat tracking etc. Default is /processed')
 
+
+args = parser.parse_args()
+#variables for part 1
 indir = args.indir
 outdir = args.outdir
 window_duration=args.min_silence_length
@@ -72,8 +76,9 @@ if args.step_duration is None:
 else:
     step_duration = args.step_duration
 dry_run = args.dry_run
-
-
+#variables for part 2
+downbeat_track=args.downbeat_track
+outdir2=args.outdir2
 
 
 
@@ -145,7 +150,44 @@ for f in file_list:
 	    else:
 	        print "Not writing file {}".format(output_file_path)
 
+#Downbeat tracking and ramp
+if not downbeat_track:
+	#create 50ms quartersine ramp up and ramp down
+	sample=sample_rate/20 # of samples in 50 ms
+	rampup=[0]*sample
+	ramp = []
+	for n in range(sample):
+	    #50ms rampup
+	    rampup[n]=sin(.5*pi*n/sample)
+
+	    #ramp 'mask' of volume envelope to multiply with 6s+ clip
+	    ramp = np.ones(int(6.315827664399093*sample_rate))
+	    
+	    #set beginning and of ramp mask to the ramp up and ramp down
+	    ramp[0:2205] = rampup
+	    #according to stack exchange this is a faster reverse than slicing the array yet less readable
+	    ramp[-2205:] = list(reversed(rampup))
+	    ramp = ramp.reshape(278528,1)
+	    ramp = np.append(ramp, ramp, axis=1)
+	    
+	    
+	def ramp_clip(audioin_6s):
+	    audioin_6s=audioin_6s*ramp
+	    return audioin_6s
+	
+
+	rnndb = madmom.features.beats.RNNDownBeatProcessor()
+	beats_dbeats = rnndb(f)
+
+	#list the files of the previous outdir (split files) to loop over
+	file_list2 = glob.glob(os.path.join(outdir, '*.wav'))
+
+	for f2 in file_list2:
+		f2_base=os.path.basename(f2)
+		f2_name, f2_extension = os.path.splitext(f2_base)
 
 
+else:
+	print "Not running downbeat-detection"
 
 
