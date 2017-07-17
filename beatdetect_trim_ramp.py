@@ -25,9 +25,6 @@ import argparse
 #Sebastian Bock, Florian Krebs and Gerhard Widmer,
 #Proceedings of the 17th International Society for Music Information Retrieval Conference (ISMIR), 2016.
 
-
-
-
 def energy(samples):
     return np.sum(np.power(samples, 2.)) / float(len(samples))
 
@@ -51,8 +48,6 @@ def windows(signal, window_size, step_size):
             break
         yield signal[i_start:i_end]
 
-
-
 parser = argparse.ArgumentParser(description='Split and process recorded Pandora streams')
 parser.add_argument('--indir', type=str, default='/Users/jeff/Documents/increase_prior/recordings/original', help='The input directory (with .wav files), default is /Users/jeff/Documents/increase_prior/recordings/original')
 parser.add_argument('--outdir', type=str, default='/Users/jeff/Documents/increase_prior/recordings/split', help='The output dir. Defaults to /Users/jeff/Documents/increase_prior/recordings/split')
@@ -61,11 +56,11 @@ parser.add_argument('--silence-threshold', type=float, default=1e-6, help='energ
 parser.add_argument('--step-duration', type=float, default=None, help='amount of time to step through input file after calculating e. Smaller = slower, more accurate; Larger = faster, might miss. Default is min_silence_length/10')
 parser.add_argument('--dry-run', '-d', action='store_true', help='Don\'t actually write any output files.')
 
-parser.add_argument('--downbeat-track', '-t', action='store_true', help='Don\'t run secomd step - RNN downbeat tracking with madmom')
+parser.add_argument('--downbeat-track', '-t', action='store_true', help='Don\'t run second step - RNN downbeat tracking with madmom, ramps.')
 parser.add_argument('--outdir2', type=str, default='/Users/jeff/Documents/increase_prior/recordings/processed', help='The output dir for part to - downbeat tracking etc. Default is /processed')
 
-
 args = parser.parse_args()
+
 #variables for part 1
 indir = args.indir
 outdir = args.outdir
@@ -79,8 +74,6 @@ dry_run = args.dry_run
 #variables for part 2
 downbeat_track=args.downbeat_track
 outdir2=args.outdir2
-
-
 
 print "Splitting where energy is below {}% for longer than {}s.".format(
     silence_threshold * 100.,
@@ -118,7 +111,6 @@ for f in file_list:
 
 	cut_times = (r * step_duration for r in rising_edges(window_silence))
 
-
 	# This is the step that takes long, since we force the generators to run.
 	print "Finding silences..."
 
@@ -133,7 +125,6 @@ for f in file_list:
 	cut_samples_filtered.append(-1)
 	
 	cut_ranges = [(i, cut_samples_filtered[i], cut_samples_filtered[i+1]) for i in xrange(len(cut_samples_filtered) - 1)]
-
 
 	for i, start, stop in tqdm(cut_ranges):
 	    output_file_path = "%s_%03d.wav"%(
@@ -186,6 +177,29 @@ if not downbeat_track:
 		f2_base=os.path.basename(f2)
 		f2_name, f2_extension = os.path.splitext(f2_base)
 
+		audioin, sr, fmt = wavread(f2) #load .wav
+		third_length=len(audioin)/441/3 #length of one third of the song in RNN windows (for 10 ms window)
+		starttime = []
+		audioin_6s_ramped=[]
+		for i in range(3): #3
+		    #search for downbeats from each third of the track from 7 seconds after the start of the third to 7 s before the end
+		    third_start=(third_length*i)+700
+		    third_end=third_length*(i+1)-700
+		    #starttime given in 10 ms increments (window from RNN downbeat processor)
+		    #argmax finds most probable downbeat from third section
+		    starttime = (i*third_length)+np.argmax(beats_dbeats[third_start:third_end,1])
+		    #starttime conversion to samples using sr
+		    starttime=starttime*sr/100
+		    
+		    #a little over 6 seconds, matching lengths of stimulus files
+		    audioin_6s = audioin[starttime:starttime+int(6.315827664399093*sr)]
+		    
+		    audioin_6s_ramped = audioin_6s * ramp
+		    
+		    f_basename = os.path.basename(f)
+		    f_basename, extension = os.path.splitext(f_basename)
+		    wavwrite(audioin_6s_ramped, os.path.join(outdir2, f_basename + '_' + "%s" % i + ".wav"), fs=sr, enc="pcm16")
+		    print "Processed file %s_%s" % (f, i)
 
 else:
 	print "Not running downbeat-detection"
