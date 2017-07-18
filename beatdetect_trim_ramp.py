@@ -56,6 +56,8 @@ parser.add_argument('--silence-threshold', type=float, default=1e-6, help='energ
 parser.add_argument('--step-duration', type=float, default=None, help='amount of time to step through input file after calculating e. Smaller = slower, more accurate; Larger = faster, might miss. Default is min_silence_length/10')
 parser.add_argument('--dry-run', '-d', action='store_true', help='Don\'t actually write any output files.')
 
+parser.add_argument('--splitting', '-s', action='store_true', help='Don\'t split files and save them, skip to downbeat tracking, ramping (sets sr to 44100 for now)')
+
 parser.add_argument('--downbeat-track', '-t', action='store_true', help='Don\'t run second step - RNN downbeat tracking with madmom, ramps.')
 parser.add_argument('--outdir2', type=str, default='/Users/jeff/Documents/increase_prior/recordings/processed', help='The output dir for part to - downbeat tracking etc. Default is /processed')
 
@@ -71,75 +73,83 @@ if args.step_duration is None:
 else:
     step_duration = args.step_duration
 dry_run = args.dry_run
+splitting= args.splitting
 #variables for part 2
 downbeat_track=args.downbeat_track
 outdir2=args.outdir2
 
-print "Splitting where energy is below {}% for longer than {}s.".format(
-    silence_threshold * 100.,
-    window_duration
-)
-
-#create list of .wav files from the indir
-file_list = glob.glob(os.path.join(indir, '*.wav'))
-#loops through files in the indir
-for f in file_list:
-	f_base=os.path.basename(f)
-	f_name, f_extension = os.path.splitext(f_base)
-	
-	print "Splitting file : %s"%f_base
-	#load file
-	sample_rate, samples = wavfile.read(filename=f, mmap=True)
-
-	max_amplitude = np.iinfo(samples.dtype).max
-	max_energy = energy([max_amplitude])
-	window_size = int(window_duration * sample_rate)
-	step_size = int(step_duration * sample_rate)
-
-	signal_windows = windows(
-	    signal=samples,
-	    window_size=window_size,
-	    step_size=step_size
+#if -s passed then skip to downbeat tracking
+if not splitting:
+	print "Splitting where energy is below {}% for longer than {}s.".format(
+	    silence_threshold * 100.,
+	    window_duration
 	)
 
-	window_energy = (energy(w) / max_energy for w in tqdm(
-	    signal_windows,
-	    total=int(len(samples) / float(step_size))
-	))
+	#create list of .wav files from the indir
+	file_list = glob.glob(os.path.join(indir, '*.wav'))
+	#loops through files in the indir
+	for f in file_list:
+		f_base=os.path.basename(f)
+		f_name, f_extension = os.path.splitext(f_base)
+		
+		print "Splitting file : %s"%f_base
+		#load file
+		sample_rate, samples = wavfile.read(filename=f, mmap=True)
 
-	window_silence = (e > silence_threshold for e in window_energy)
+		max_amplitude = np.iinfo(samples.dtype).max
+		max_energy = energy([max_amplitude])
+		window_size = int(window_duration * sample_rate)
+		step_size = int(step_duration * sample_rate)
 
-	cut_times = (r * step_duration for r in rising_edges(window_silence))
+		signal_windows = windows(
+		    signal=samples,
+		    window_size=window_size,
+		    step_size=step_size
+		)
 
-	# This is the step that takes long, since we force the generators to run.
-	print "Finding silences..."
+		window_energy = (energy(w) / max_energy for w in tqdm(
+		    signal_windows,
+		    total=int(len(samples) / float(step_size))
+		))
 
-	cut_samples = [int(t * sample_rate) for t in cut_times]
+		window_silence = (e > silence_threshold for e in window_energy)
 
-	#filter out selected sections shorter than 30s
-	cut_samples_filtered = []
-	for t in xrange(len(cut_samples)-1):
-	    if cut_samples[t+1] - cut_samples[t] > 30*sample_rate:
-	        cut_samples_filtered.append(cut_samples[t])
+		cut_times = (r * step_duration for r in rising_edges(window_silence))
 
-	cut_samples_filtered.append(-1)
-	
-	cut_ranges = [(i, cut_samples_filtered[i], cut_samples_filtered[i+1]) for i in xrange(len(cut_samples_filtered) - 1)]
+		# This is the step that takes long, since we force the generators to run.
+		print "Finding silences..."
 
-	for i, start, stop in tqdm(cut_ranges):
-	    output_file_path = "%s_%03d.wav"%(
-	        os.path.join(outdir, f_name),
-	        i
-	    )
-	    if not dry_run:
-	        print "Writing file {}".format(output_file_path)
-	        wavfile.write(
-	            filename=output_file_path,
-	            rate=sample_rate,
-	            data=samples[start:stop]
-	        )
-	    else:
-	        print "Not writing file {}".format(output_file_path)
+		cut_samples = [int(t * sample_rate) for t in cut_times]
+
+		#filter out selected sections shorter than 30s
+		cut_samples_filtered = []
+		for t in xrange(len(cut_samples)-1):
+		    if cut_samples[t+1] - cut_samples[t] > 30*sample_rate:
+		        cut_samples_filtered.append(cut_samples[t])
+
+		cut_samples_filtered.append(-1)
+		
+		cut_ranges = [(i, cut_samples_filtered[i], cut_samples_filtered[i+1]) for i in xrange(len(cut_samples_filtered) - 1)]
+
+		for i, start, stop in tqdm(cut_ranges):
+		    output_file_path = "%s_%03d.wav"%(
+		        os.path.join(outdir, f_name),
+		        i
+		    )
+		    if not dry_run:
+		        print "Writing file {}".format(output_file_path)
+		        wavfile.write(
+		            filename=output_file_path,
+		            rate=sample_rate,
+		            data=samples[start:stop]
+		        )
+		    else:
+		        print "Not writing file {}".format(output_file_path)
+
+else:
+	print "not splitting, skipping to downbeat tracking"
+	sample_rate=44100
+
 
 #Downbeat tracking and ramp
 if not downbeat_track:
@@ -168,12 +178,14 @@ if not downbeat_track:
 	
 
 	rnndb = madmom.features.beats.RNNDownBeatProcessor()
-	beats_dbeats = rnndb(f)
+	
 
 	#list the files of the previous outdir (split files) to loop over
 	file_list2 = glob.glob(os.path.join(outdir, '*.wav'))
 
-	for f2 in file_list2:
+	for f2 in tqdm(file_list2):
+		beats_dbeats = rnndb(f2)
+
 		f2_base=os.path.basename(f2)
 		f2_name, f2_extension = os.path.splitext(f2_base)
 
@@ -196,10 +208,10 @@ if not downbeat_track:
 		    
 		    audioin_6s_ramped = audioin_6s * ramp
 		    
-		    f_basename = os.path.basename(f)
-		    f_basename, extension = os.path.splitext(f_basename)
-		    wavwrite(audioin_6s_ramped, os.path.join(outdir2, f_basename + '_' + "%s" % i + ".wav"), fs=sr, enc="pcm16")
-		    print "Processed file %s_%s" % (f, i)
+		    f2_basename = os.path.basename(f2)
+		    f2_basename, extension = os.path.splitext(f2_basename)
+		    wavwrite(audioin_6s_ramped, os.path.join(outdir2, f2_basename + '_' + "%s" % i + ".wav"), fs=sr, enc="pcm16")
+		    print "Processed file %s_%s" % (f2, i)
 
 else:
 	print "Not running downbeat-detection"
