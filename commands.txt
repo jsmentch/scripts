@@ -1,0 +1,69 @@
+#kill all jobs
+qselect -u jmentch | xargs qdel
+
+#if can't kill jobs
+mjobctl –c jobnumber
+
+#kill all jobs
+mjobctl –c –w user=jmentch
+
+#info about cluster nodes
+pbsmon
+
+#resources
+qr
+
+#jobs with names 
+qstat
+
+# run on particular nodes
+#PBS -l hostlist=k01+k02+k03+k04+k05+k06+k07+k08+k09+k10
+
+to zip:
+tar -zcvf archivename.tar.gz directorytobezipped/
+
+to unzip:
+tar -zxvf archivename.tar.gz
+
+
+
+
+
+
+
+#largefiles
+
+list number of files in a dir
+ls -1 | wc -l
+
+
+list latest file
+ls -Art | tail -n 1
+
+
+
+number of files in a dir:
+find . -type f -ls | wc -l
+
+move all these files to this dir:
+find . -name "*.hq_mfs" -exec mv {} hq_mfs/ \;
+
+find . -name “*.wav” -exec cp {} /Volumes/Transcend/scratch/hpss/6s/wav_groove \;
+
+
+list first 100 files in dir
+ls | head -n 100
+
+find . -name *prior -exec > {} sol.t \;
+
+cp t6s_SOZ* /Volumes/Transcend/working/BLAST-master/aCollage/acollagetestaudiolab/prior
+
+ls t6s_SOZ*prior >> sfl.t
+
+
+ls t6s_SOA*wav >> sml.t
+
+
+cp t6s_SOZ* /Volumes/Transcend/working/BLAST-master/aCollage/acollagetestaudiolab/prior
+
+
